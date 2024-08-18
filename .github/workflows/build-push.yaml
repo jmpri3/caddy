@@ -1,0 +1,50 @@
+name: Build and push
+
+on:
+  workflow_dispatch:
+  push:
+    branches: main
+    paths:
+      - Dockerfile
+
+env:
+  DOCKER_NAME: caddy
+  DOCKER_DESCRIPTION: "Caddy Docker custom build with DigitalOcean DNS, CrowdSec Bouncer and Docker Proxy modules"
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      labels: ${{ steps.meta.outputs.labels }}
+      tags: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: Dockerfile
+      - id: version
+        run: echo "version=$(grep -Eo 'caddy:[0-9]+\.[0-9]+\.[0-9]+$' Dockerfile | cut -d ':' -f2)" | tee -a $GITHUB_OUTPUT
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.DOCKERHUB_USERNAME }}/${{ env.DOCKER_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=v${{ steps.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.version.outputs.version }}
+            type=semver,pattern={{major}},value=v${{ steps.version.outputs.version }}
+          labels: |
+            org.opencontainers.image.title=${{ env.DOCKER_NAME }}
+            org.opencontainers.image.description=${{ env.DOCKER_DESCRIPTION }}
+
+  docker:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          labels: ${{ needs.meta.outputs.labels }}
+          tags: ${{ needs.meta.outputs.tags }}
